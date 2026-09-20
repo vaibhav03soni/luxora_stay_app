@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Premium black background for Luxury Stay -->
+    <item android:drawable="@color/ic_launcher_background" />
+
+    <!-- Center the elegant vector logo -->
+    <item
+        android:drawable="@drawable/ic_launcher_foreground"
+        android:gravity="center" />
+</layer-list>
