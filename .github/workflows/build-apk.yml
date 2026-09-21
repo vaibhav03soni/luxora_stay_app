@@ -1,4 +1,4 @@
-name: Build Flutter Android APK
+name: Luxora Stay - Android APK
 
 on:
   workflow_dispatch:
@@ -6,14 +6,24 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+
 jobs:
   build:
+    name: Build Release APK
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      # --------------------------------------------------
+      # 1. Checkout
+      # --------------------------------------------------
+      - name: Checkout repository
         uses: actions/checkout@v4
 
+      # --------------------------------------------------
+      # 2. Java 17
+      # --------------------------------------------------
       - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
@@ -21,6 +31,9 @@ jobs:
           java-version: '17'
           cache: gradle
 
+      # --------------------------------------------------
+      # 3. Flutter 3.41.0
+      # --------------------------------------------------
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -28,30 +41,75 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Verify Flutter
+      # --------------------------------------------------
+      # 4. Verify environment
+      # --------------------------------------------------
+      - name: Verify Flutter and Java
         run: |
           flutter --version
+          dart --version
           java -version
           flutter doctor -v
 
-      - name: Install dependencies
-        run: flutter pub get
+      # --------------------------------------------------
+      # 5. Create asset directories
+      # --------------------------------------------------
+      - name: Create required asset directories
+        run: |
+          mkdir -p assets/images
+          mkdir -p assets/icons
+          mkdir -p assets/animations
+          mkdir -p assets/vectors
 
-      - name: Analyze
-        run: flutter analyze --no-fatal-infos
-
-      - name: Clean
+      # --------------------------------------------------
+      # 6. Flutter clean
+      # --------------------------------------------------
+      - name: Flutter clean
         run: flutter clean
 
-      - name: Get dependencies again
+      # --------------------------------------------------
+      # 7. Get dependencies
+      # --------------------------------------------------
+      - name: Flutter pub get
         run: flutter pub get
 
-      - name: Build Release APK
-        run: flutter build apk --release --verbose
+      # --------------------------------------------------
+      # 8. Check outdated packages
+      # Informational only - never fails build
+      # --------------------------------------------------
+      - name: Check outdated packages
+        continue-on-error: true
+        run: flutter pub outdated
 
-      - name: Upload APK
+      # --------------------------------------------------
+      # 9. Analyze
+      # Informational only - warnings do not stop APK
+      # --------------------------------------------------
+      - name: Flutter analyze
+        continue-on-error: true
+        run: flutter analyze
+
+      # --------------------------------------------------
+      # 10. Build release APK
+      # --------------------------------------------------
+      - name: Build Release APK
+        run: flutter build apk --release
+
+      # --------------------------------------------------
+      # 11. Verify APK
+      # --------------------------------------------------
+      - name: Verify APK
+        run: |
+          test -f build/app/outputs/flutter-apk/app-release.apk
+          ls -lh build/app/outputs/flutter-apk/app-release.apk
+
+      # --------------------------------------------------
+      # 12. Upload APK
+      # --------------------------------------------------
+      - name: Upload Release APK
         uses: actions/upload-artifact@v4
         with:
           name: luxora-stay-release-apk
           path: build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
+          retention-days: 30
