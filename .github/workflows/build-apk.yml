@@ -15,11 +15,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Checkout
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2. Java 17
       - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
@@ -27,7 +25,6 @@ jobs:
           java-version: "17"
           cache: gradle
 
-      # 3. Flutter
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -35,59 +32,31 @@ jobs:
           channel: stable
           cache: true
 
-      # 4. Check Flutter / Android environment
-      - name: Check environment
+      - name: Check Flutter
         run: |
           flutter --version
           dart --version
           java -version
-          echo "ANDROID_HOME=$ANDROID_HOME"
-          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
-          ls -la "$ANDROID_HOME" || true
-          ls -la "$ANDROID_HOME/cmdline-tools" || true
-          ls -la "$ANDROID_HOME/platform-tools" || true
+          flutter doctor -v
 
-      # 5. Accept Android licenses
-      - name: Accept Android licenses
-        run: |
-          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses || true
-
-      # 6. Install required Android SDK packages
-      - name: Install Android SDK
-        run: |
-          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
-            "platform-tools" \
-            "platforms;android-35" \
-            "build-tools;35.0.0"
-
-      # 7. Flutter dependencies
-      - name: Flutter Pub Get
-        run: flutter pub get
-
-      # 8. Clean
       - name: Flutter Clean
         run: flutter clean
 
-      # 9. Dependencies after clean
       - name: Flutter Pub Get
         run: flutter pub get
 
-      # 10. Build APK
       - name: Build Release APK
         run: flutter build apk --release
 
-      # 11. Prepare APK
-      - name: Prepare APK
+      - name: Verify APK
         run: |
-          mkdir -p build/apk
-          cp build/app/outputs/flutter-apk/app-release.apk \
-             build/apk/Luxora-Stay-release.apk
+          test -f build/app/outputs/flutter-apk/app-release.apk
+          ls -lh build/app/outputs/flutter-apk/app-release.apk
 
-      # 12. Upload APK
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: Luxora-Stay-APK
-          path: build/apk/Luxora-Stay-release.apk
+          path: build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
           retention-days: 30
