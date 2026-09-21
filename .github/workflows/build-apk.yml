@@ -1,86 +1,99 @@
-name: Luxora Stay - Production APK
-
+name: Build Android APK
 on:
   workflow_dispatch:
   push:
     branches:
       - main
-
-permissions:
-  contents: read
-
 jobs:
   build:
-    name: Build Android Release APK
     runs-on: ubuntu-latest
-
+    # environment: production   # <-- UNCOMMENT if secrets are under an Environment, not repo-level
     steps:
-      - name: Checkout
+      # 1. Repo checkout
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Java 17
+      # 2. Node setup
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # 3. Java setup (required for Android/Gradle build)
+      - name: Setup Java
         uses: actions/setup-java@v4
         with:
-          distribution: temurin
+          distribution: 'temurin'
           java-version: '17'
-          cache: gradle
 
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: '3.41.0'
-          channel: stable
-          cache: true
-
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install Android SDK 36
+      # 4. Create .env file from GitHub Secrets
+      - name: Create .env file (apps/mobile)
+        working-directory: apps/mobile
         run: |
-          yes | sdkmanager --licenses || true
-          sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+          cat <<EOF > .env
+          EXPO_PUBLIC_API_BASE_URL=${{ secrets.EXPO_PUBLIC_API_BASE_URL }}
+          EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY=${{ secrets.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY }}
+          EOF
 
-      - name: Create asset directories
+      # 5. Fail fast if secrets resolved empty — better than a silently broken APK
+      - name: Verify env values are not empty
+        working-directory: apps/mobile
         run: |
-          mkdir -p assets/images
-          mkdir -p assets/icons
-          mkdir -p assets/animations
-          mkdir -p assets/vectors
+          set -e
+          if [ -z "${{ secrets.EXPO_PUBLIC_API_BASE_URL }}" ]; then
+            echo "EXPO_PUBLIC_API_BASE_URL is EMPTY - check repo secrets"
+            exit 1
+          fi
+          if [ -z "${{ secrets.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY }}" ]; then
+            echo "EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY is EMPTY - check repo secrets"
+            exit 1
+          fi
+          echo "Both secrets present and non-empty"
 
-      - name: Check Android configuration
+      # 6. Clean install to avoid stale/duplicate package issues
+      #    Monorepo (apps/mobile, services/api) — run from root so workspaces install correctly.
+      - name: Install dependencies (clean)
         run: |
-          echo "===== AGP ====="
-          grep -R "com.android.application" android/settings.gradle || true
+          rm -rf node_modules
+          npm ci
 
-          echo "===== compileSdk ====="
-          grep -R "compileSdk" android/app/build.gradle || true
+      # 7. Generate native android/ folder (Expo managed project doesn't
+      #    commit this folder to git — it must be generated before gradlew exists)
+      - name: Expo prebuild (generate android project)
+        working-directory: apps/mobile
+        run: npx expo prebuild --platform android --clean
 
-          echo "===== Gradle ====="
-          grep "distributionUrl" android/gradle/wrapper/gradle-wrapper.properties
-
-      - name: Flutter clean
-        run: flutter clean
-
-      - name: Flutter pub get
-        run: flutter pub get
-
-      - name: Flutter analyze
-        continue-on-error: true
-        run: flutter analyze
-
-      - name: Build Release APK
-        run: flutter build apk --release
-
-      - name: Verify APK
+      # 8. Clear stale native build caches (reanimated version mismatch fix)
+      - name: Clear native build caches
         run: |
-          test -f build/app/outputs/flutter-apk/app-release.apk
-          echo "APK BUILD SUCCESSFUL"
-          ls -lh build/app/outputs/flutter-apk/app-release.apk
+          rm -rf apps/mobile/node_modules/react-native-reanimated/android/.cxx
+          rm -rf apps/mobile/android/app/.cxx
+          rm -rf ~/.gradle/caches
 
+      # 9. Make gradlew executable
+      - name: Grant execute permission for gradlew
+        working-directory: apps/mobile/android
+        run: chmod +x gradlew
+
+      # 10. Clean previous android build
+      - name: Clean Android build
+        working-directory: apps/mobile/android
+        run: ./gradlew clean
+
+      # 11. Build the release APK
+      #     env vars passed directly to the Gradle process too — this is what
+      #     actually reaches the Metro bundler subprocess regardless of CWD,
+      #     as a safety net alongside the explicit dotenv load in metro.config.js.
+      - name: Build APK
+        working-directory: apps/mobile/android
+        env:
+          EXPO_PUBLIC_API_BASE_URL: ${{ secrets.EXPO_PUBLIC_API_BASE_URL }}
+          EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY: ${{ secrets.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY }}
+        run: ./gradlew assembleRelease --no-daemon
+
+      # 12. Upload APK as workflow artifact
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: luxora-stay-release-apk
-          path: build/app/outputs/flutter-apk/app-release.apk
-          if-no-files-found: error
-          retention-days: 30
+          name: app-release
+          path: apps/mobile/android/app/build/outputs/apk/release/app-release.apk
