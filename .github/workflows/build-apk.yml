@@ -1,4 +1,4 @@
-name: Build Production Release APK
+name: Luxora Stay - Production APK
 
 on:
   push:
@@ -10,96 +10,194 @@ permissions:
   contents: read
 
 concurrency:
-  group: flutter-production-${{ github.ref }}
+  group: luxora-production-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   build:
     name: Build Production Release APK
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 40
 
     steps:
+      # -----------------------------------------------
+      # Checkout
+      # -----------------------------------------------
       - name: Checkout
         uses: actions/checkout@v5
 
+      # -----------------------------------------------
+      # Java 17
+      # -----------------------------------------------
       - name: Setup Java 17
         uses: actions/setup-java@v5
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: "17"
           cache: gradle
 
+      # -----------------------------------------------
+      # Flutter
+      # -----------------------------------------------
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.41.0'
+          flutter-version: "3.41.0"
           channel: stable
           cache: true
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+      # -----------------------------------------------
+      # Android SDK
+      # GitHub runner already contains Android SDK
+      # -----------------------------------------------
+      - name: Configure Android SDK
+        shell: bash
+        run: |
+          echo "ANDROID_HOME=$ANDROID_SDK_ROOT" >> "$GITHUB_ENV"
 
-      - name: Accept Android licenses
-        run: yes | sdkmanager --licenses || true
+          echo "Android SDK:"
+          echo "$ANDROID_SDK_ROOT"
 
-      - name: Flutter Doctor
-        run: flutter doctor -v
+          echo "SDK Manager:"
+          sdkmanager --version
 
-      - name: Install dependencies
+      # -----------------------------------------------
+      # Install required Android packages
+      # -----------------------------------------------
+      - name: Install Android SDK packages
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses || true
+
+          sdkmanager \
+            "platform-tools" \
+            "platforms;android-36" \
+            "build-tools;36.0.0"
+
+      # -----------------------------------------------
+      # Verify environment
+      # -----------------------------------------------
+      - name: Verify environment
+        run: |
+          flutter --version
+          dart --version
+          java -version
+          sdkmanager --version
+          adb --version
+          flutter doctor -v
+
+      # -----------------------------------------------
+      # Dependencies
+      # -----------------------------------------------
+      - name: Flutter pub get
         run: flutter pub get
 
+      # -----------------------------------------------
+      # Code generation
+      # -----------------------------------------------
       - name: Generate code
         shell: bash
         run: |
           if grep -q "build_runner" pubspec.yaml; then
             dart run build_runner build --delete-conflicting-outputs
           else
-            echo "No build_runner dependency. Skipping."
+            echo "No build_runner dependency found."
           fi
 
-      - name: Analyze
+      # -----------------------------------------------
+      # Analyze
+      # -----------------------------------------------
+      - name: Flutter analyze
         run: flutter analyze
 
-      - name: Run tests
+      # -----------------------------------------------
+      # Tests
+      # -----------------------------------------------
+      - name: Flutter test
         run: flutter test
 
-      - name: Clean
+      # -----------------------------------------------
+      # Clean
+      # -----------------------------------------------
+      - name: Flutter clean
         run: flutter clean
 
-      - name: Get dependencies
+      - name: Flutter pub get
         run: flutter pub get
 
+      # -----------------------------------------------
+      # Build APK
+      # -----------------------------------------------
       - name: Build Release APK
-        run: flutter build apk --release
+        run: |
+          flutter build apk --release
 
-      - name: Verify APK
+      # -----------------------------------------------
+      # Build AAB
+      # -----------------------------------------------
+      - name: Build Release AAB
+        run: |
+          flutter build appbundle --release
+
+      # -----------------------------------------------
+      # Verify APK and AAB
+      # -----------------------------------------------
+      - name: Verify production builds
         shell: bash
         run: |
+          set -e
+
           APK="build/app/outputs/flutter-apk/app-release.apk"
+          AAB="build/app/outputs/bundle/release/app-release.aab"
+
+          echo "Checking APK..."
 
           if [ ! -f "$APK" ]; then
-            echo "ERROR: APK was not generated."
+            echo "ERROR: APK not found."
             exit 1
           fi
 
-          echo "======================================"
-          echo "PRODUCTION APK BUILD SUCCESSFUL"
-          echo "======================================"
+          echo "Checking AAB..."
 
+          if [ ! -f "$AAB" ]; then
+            echo "ERROR: AAB not found."
+            exit 1
+          fi
+
+          echo ""
+          echo "======================================"
+          echo "LUXORA STAY BUILD SUCCESSFUL"
+          echo "======================================"
+          echo ""
+
+          echo "APK:"
           ls -lh "$APK"
 
-      - name: Prepare APK
+          echo ""
+          echo "AAB:"
+          ls -lh "$AAB"
+
+      # -----------------------------------------------
+      # Prepare artifacts
+      # -----------------------------------------------
+      - name: Prepare release artifacts
         shell: bash
         run: |
           mkdir -p release
+
           cp build/app/outputs/flutter-apk/app-release.apk \
             release/Luxora-Stay-release.apk
 
-      - name: Upload APK Artifact
+          cp build/app/outputs/bundle/release/app-release.aab \
+            release/Luxora-Stay-release.aab
+
+      # -----------------------------------------------
+      # Upload APK + AAB
+      # -----------------------------------------------
+      - name: Upload production artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: Luxora-Stay-Release-APK
-          path: release/Luxora-Stay-release.apk
+          name: Luxora-Stay-Production
+          path: release/
           if-no-files-found: error
           retention-days: 30
