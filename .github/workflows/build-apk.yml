@@ -1,4 +1,4 @@
-name: Luxora Stay - Android APK
+name: Luxora Stay - Production APK
 
 on:
   workflow_dispatch:
@@ -11,19 +11,13 @@ permissions:
 
 jobs:
   build:
-    name: Build Release APK
+    name: Build Android Release APK
     runs-on: ubuntu-latest
 
     steps:
-      # --------------------------------------------------
-      # 1. Checkout
-      # --------------------------------------------------
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      # --------------------------------------------------
-      # 2. Java 17
-      # --------------------------------------------------
       - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
@@ -31,9 +25,6 @@ jobs:
           java-version: '17'
           cache: gradle
 
-      # --------------------------------------------------
-      # 3. Flutter 3.41.0
-      # --------------------------------------------------
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -41,72 +32,52 @@ jobs:
           channel: stable
           cache: true
 
-      # --------------------------------------------------
-      # 4. Verify environment
-      # --------------------------------------------------
-      - name: Verify Flutter and Java
-        run: |
-          flutter --version
-          dart --version
-          java -version
-          flutter doctor -v
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
 
-      # --------------------------------------------------
-      # 5. Create asset directories
-      # --------------------------------------------------
-      - name: Create required asset directories
+      - name: Install Android SDK 36
+        run: |
+          yes | sdkmanager --licenses || true
+          sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Create asset directories
         run: |
           mkdir -p assets/images
           mkdir -p assets/icons
           mkdir -p assets/animations
           mkdir -p assets/vectors
 
-      # --------------------------------------------------
-      # 6. Flutter clean
-      # --------------------------------------------------
+      - name: Check Android configuration
+        run: |
+          echo "===== AGP ====="
+          grep -R "com.android.application" android/settings.gradle || true
+
+          echo "===== compileSdk ====="
+          grep -R "compileSdk" android/app/build.gradle || true
+
+          echo "===== Gradle ====="
+          grep "distributionUrl" android/gradle/wrapper/gradle-wrapper.properties
+
       - name: Flutter clean
         run: flutter clean
 
-      # --------------------------------------------------
-      # 7. Get dependencies
-      # --------------------------------------------------
       - name: Flutter pub get
         run: flutter pub get
 
-      # --------------------------------------------------
-      # 8. Check outdated packages
-      # Informational only - never fails build
-      # --------------------------------------------------
-      - name: Check outdated packages
-        continue-on-error: true
-        run: flutter pub outdated
-
-      # --------------------------------------------------
-      # 9. Analyze
-      # Informational only - warnings do not stop APK
-      # --------------------------------------------------
       - name: Flutter analyze
         continue-on-error: true
         run: flutter analyze
 
-      # --------------------------------------------------
-      # 10. Build release APK
-      # --------------------------------------------------
       - name: Build Release APK
         run: flutter build apk --release
 
-      # --------------------------------------------------
-      # 11. Verify APK
-      # --------------------------------------------------
       - name: Verify APK
         run: |
           test -f build/app/outputs/flutter-apk/app-release.apk
+          echo "APK BUILD SUCCESSFUL"
           ls -lh build/app/outputs/flutter-apk/app-release.apk
 
-      # --------------------------------------------------
-      # 12. Upload APK
-      # --------------------------------------------------
-      - name: Upload Release APK
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: luxora-stay-release-apk
