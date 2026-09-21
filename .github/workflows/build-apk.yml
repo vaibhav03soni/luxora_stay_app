@@ -15,11 +15,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Checkout source code
+      # 1. Checkout
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2. Setup Java 17
+      # 2. Java 17
       - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
@@ -27,7 +27,7 @@ jobs:
           java-version: "17"
           cache: gradle
 
-      # 3. Setup Flutter
+      # 3. Flutter
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -35,46 +35,55 @@ jobs:
           channel: stable
           cache: true
 
-      # 4. Verify environment
-      - name: Flutter doctor
+      # 4. Check Flutter / Android environment
+      - name: Check environment
         run: |
           flutter --version
           dart --version
-          flutter doctor -v
+          java -version
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+          ls -la "$ANDROID_HOME" || true
+          ls -la "$ANDROID_HOME/cmdline-tools" || true
+          ls -la "$ANDROID_HOME/platform-tools" || true
 
-      # 5. Install Android SDK components
-      - name: Setup Android SDK
+      # 5. Accept Android licenses
+      - name: Accept Android licenses
         run: |
-          yes | sdkmanager --licenses || true
-          sdkmanager \
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses || true
+
+      # 6. Install required Android SDK packages
+      - name: Install Android SDK
+        run: |
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
             "platform-tools" \
             "platforms;android-35" \
             "build-tools;35.0.0"
 
-      # 6. Get Flutter dependencies
+      # 7. Flutter dependencies
       - name: Flutter Pub Get
         run: flutter pub get
 
-      # 7. Clean previous builds
+      # 8. Clean
       - name: Flutter Clean
         run: flutter clean
 
-      # 8. Get dependencies again after clean
+      # 9. Dependencies after clean
       - name: Flutter Pub Get
         run: flutter pub get
 
-      # 9. Build release APK
+      # 10. Build APK
       - name: Build Release APK
         run: flutter build apk --release
 
-      # 10. Rename APK
-      - name: Rename APK
+      # 11. Prepare APK
+      - name: Prepare APK
         run: |
           mkdir -p build/apk
           cp build/app/outputs/flutter-apk/app-release.apk \
              build/apk/Luxora-Stay-release.apk
 
-      # 11. Upload APK artifact
+      # 12. Upload APK
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
